@@ -14,9 +14,9 @@
 #include <Button2.h>
 
 //******************************** Configulation ****************************//
-#define DebugMode  // Uncomment this line if you want to debug
+// #define _DEBUG_ // Uncomment this line if you want to debug
 
-#define _DEBUG_
+
 
 //******************************** Variables & Objects **********************//
 #define deviceName "MyESP32"
