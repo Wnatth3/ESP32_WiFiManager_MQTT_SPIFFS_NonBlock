@@ -16,13 +16,7 @@
 //******************************** Configulation ****************************//
 #define DebugMode  // Uncomment this line if you want to debug
 
-#ifdef DebugMode
-#define de(x)   Serial.print(x)
-#define deln(x) Serial.println(x)
-#else
-#define de(x)
-#define deln(x)
-#endif
+#define _DEBUG_
 
 //******************************** Variables & Objects **********************//
 #define deviceName "MyESP32"
@@ -62,20 +56,26 @@ TickTwo tReconnectMqtt(reconnectMqtt, 3000, 0, MILLIS);
 //******************************** Functions ********************************//
 //----------------- SPIFFS --------------------//
 void loadConfigration() {
-    // clean FS, for testing
-    // SPIFFS.format();
+// clean FS, for testing
+// SPIFFS.format();
 
-    // read configuration from FS json
-    deln("mounting FS...");
+// read configuration from FS json
+#ifdef _DEBUG_
+    Serial.println(F("mounting FS..."));
+#endif
 
     if (SPIFFS.begin()) {
-        deln("mounted file system");
+#ifdef _DEBUG_
+        Serial.println(F("mounted file system"));
+#endif
         if (SPIFFS.exists("/config.json")) {
-            // file exists, reading and loading
-            deln("reading config file");
+// file exists, reading and loading
+#ifdef _DEBUG_
+            Serial.println(F("reading config file"));
+#endif
             File configFile = SPIFFS.open("/config.json", "r");
             if (configFile) {
-                deln("opened config file");
+                Serial.println(F("opened config file"));
                 size_t size = configFile.size();
                 // Allocate a buffer to store contents of the file.
                 std::unique_ptr<char[]> buf(new char[size]);
@@ -85,19 +85,19 @@ void loadConfigration() {
                 auto         deserializeError = deserializeJson(json, buf.get());
                 serializeJson(json, Serial);
                 if (!deserializeError) {
-                    deln("\nparsed json");
+                    Serial.println(F("\nparsed json"));
                     strcpy(mqttBroker, json["mqttBroker"]);
                     strcpy(mqttPort, json["mqttPort"]);
                     strcpy(mqttUser, json["mqttUser"]);
                     strcpy(mqttPass, json["mqttPass"]);
                     storedValues = json["storedValues"];
                 } else {
-                    deln("failed to load json config");
+                    Serial.println(F("failed to load json config"));
                 }
             }
         }
     } else {
-        deln("failed to mount FS");
+        Serial.println(F("failed to mount FS"));
     }
 }
 
@@ -107,14 +107,20 @@ void saveConfigCallback() {
     strcpy(mqttPort, customMqttPort.getValue());
     strcpy(mqttUser, customMqttUser.getValue());
     strcpy(mqttPass, customMqttPass.getValue());
-    // deln("The values in the file are: ");
-    // deln("\tmqtt_broker : " + String(mqttBroker));
-    // deln("\tmqtt_port : " + String(mqttPort));
-    // deln("\tmqtt_user : " + String(mqttUser));
-    // deln("\tmqtt_pass : " + String(mqttPass));
+#ifdef _DEBUG_
+    Serial.println(F("The values in the file are: "));
+    Serial.print(F("\tmqtt_broker : "));
+    Serial.println(mqttBroker);
+    Serial.print(F("\tmqtt_port : "));
+    Serial.println(mqttPort);
+    Serial.print(F("\tmqtt_user : "));
+    Serial.println(mqttUser);
+    Serial.print(F("\tmqtt_pass : "));
+    Serial.println(mqttPass);
+#endif
 
     // save the custom parameters to FS
-    deln("saving config");
+    Serial.println(F("saving config"));
     JsonDocument json;
     json["mqttBroker"] = mqttBroker;
     json["mqttPort"]   = mqttPort;
@@ -128,7 +134,7 @@ void saveConfigCallback() {
 
     File configFile = SPIFFS.open("/config.json", "w");
     if (!configFile) {
-        deln("failed to open config file for writing");
+        Serial.println(F("failed to open config file for writing"));
     }
 
     serializeJson(json, Serial);
@@ -137,26 +143,27 @@ void saveConfigCallback() {
     configFile.close();
     // end save
 
-    deln("\nlocal ip");
-    deln(WiFi.localIP());
-    deln(WiFi.gatewayIP());
-    deln(WiFi.subnetMask());
-    deln(WiFi.dnsIP());
+    Serial.println(F("\nlocal ip"));
+    Serial.println(WiFi.localIP());
+    Serial.println(WiFi.gatewayIP());
+    Serial.println(WiFi.subnetMask());
+    Serial.println(WiFi.dnsIP());
 
     if (storedValues) {
-        deln("Setting MQTT Broker: " + String(mqttBroker));
+        Serial.print(F("Setting MQTT Broker: "));
+        Serial.println(mqttBroker);
         mqtt.setServer(mqttBroker, atoi(mqttPort));
         tConnectMqtt.start();
     }
 
-    // deln("set MQTT Broker: " + String(mqttBroker));
+    // Serial.println("set MQTT Broker: " + String(mqttBroker));
     // mqtt.setServer(mqttBroker, atoi(mqttPort));
     // tConnectMqtt.start();
 }
 
 //----------------- Wifi Manager --------------//
 void wifiManagerSetup() {
-    deln("Loading configuration...");
+    Serial.println(F("Loading configuration..."));
     loadConfigration();
 
     // add all your parameters here
@@ -169,29 +176,31 @@ void wifiManagerSetup() {
     // wifiManager.setConfigPortalTimeout(60);  // auto close configportal after 30 seconds
     wifiManager.setConfigPortalBlocking(false);
 
-    deln("Saving configuration...");
+    Serial.println(F("Saving configuration..."));
     wifiManager.setSaveConfigCallback(saveConfigCallback);
 
     if (wifiManager.autoConnect(deviceName, "password")) {
-        deln("connected...yeey :D");
+        Serial.println(F("connected...yeey :D"));
     } else {
-        deln("Configportal running");
+        Serial.println(F("Configportal running"));
     }
 }
 
 //----------------- Connect MQTT --------------//
 void reconnectMqtt() {
     if (WiFi.status() == WL_CONNECTED) {
-        deln("Connecting MQTT... ");
+        Serial.println(F("Connecting MQTT... "));
         if (mqtt.connect(deviceName, mqttUser, mqttPass)) {
             tReconnectMqtt.stop();
-            deln("connected");
+            Serial.println(F("connected"));
             tConnectMqtt.interval(0);
             tConnectMqtt.start();
             statusLed.blinkNumberOfTimes(200, 200, 3);  // 200ms ON, 200ms OFF, repeat 3 times, blink immediately
         } else {
-            deln("failed state: " + String(mqtt.state()));
-            deln("counter: " + String(tReconnectMqtt.counter()));
+            Serial.print(F("failed state: "));
+            Serial.println(mqtt.state());
+            Serial.print(F("counter: "));
+            Serial.println(tReconnectMqtt.counter());
             if (tReconnectMqtt.counter() >= 3) {
                 // ESP.restart();
                 tReconnectMqtt.stop();
@@ -201,7 +210,9 @@ void reconnectMqtt() {
             }
         }
     } else {
-        if (tReconnectMqtt.counter() <= 1) deln("WiFi is not connected");
+        if (tReconnectMqtt.counter() <= 1) {
+            Serial.println(F("WiFi is not connected"));
+        }
     }
 }
 
@@ -217,10 +228,11 @@ void connectMqtt() {
 //----------------- Reset WiFi Button ---------//
 void resetWifiBtPressed(Button2& btn) {
     statusLed.turnON();
-    deln("Deleting the config file and resetting WiFi.");
+    Serial.println(F("Deleting the config file and resetting WiFi."));
     SPIFFS.format();
     wifiManager.resetSettings();
-    deln(String(deviceName) + " is restarting.");
+    Serial.print(deviceName);
+    Serial.println(F(" is restarting."));
     ESP.restart();
 }
 
