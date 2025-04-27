@@ -16,8 +16,6 @@
 //******************************** Configulation ****************************//
 // #define _DEBUG_ // Uncomment this line if you want to debug
 
-
-
 //******************************** Variables & Objects **********************//
 #define deviceName "MyESP32"
 
@@ -204,6 +202,35 @@ void wifiManagerSetup() {
     }
 }
 
+void handleMqttMessage(char* topic, byte* payload, unsigned int length) {
+    String message;
+    for (int i = 0; i < length; i++) {
+        message += (char)payload[i];
+    }
+
+    if (String(topic) == "test/subscribe/topic") {
+        if (message == "aValue") {
+            // Do something
+        } else if (message == "otherValue") {
+            // Do something
+        }
+    }
+}
+
+void subscribeMqtt() {
+#ifdef _DEBUG_
+    Serial.println(F("Subscribing to the MQTT topics..."));
+#endif
+    mqtt.subscribe("test/subscribe/topic");
+}
+
+void publishMqtt() {
+#ifdef _DEBUG_
+    Serial.println(F("Publishing to the MQTT topics..."));
+#endif
+    mqtt.publish("test/publish/topic", "Hello World!");
+}
+
 //----------------- Connect MQTT --------------//
 void reconnectMqtt() {
     if (WiFi.status() == WL_CONNECTED) {
@@ -218,6 +245,8 @@ void reconnectMqtt() {
             tConnectMqtt.interval(0);
             tConnectMqtt.start();
             statusLed.blinkNumberOfTimes(200, 200, 3);  // 200ms ON, 200ms OFF, repeat 3 times, blink immediately
+            subscribeMqtt();
+            publishMqtt();
         } else {
 #ifdef _DEBUG_
             Serial.print(F("failed state: "));
@@ -275,6 +304,7 @@ void setup() {
     Serial.begin(115200);
 
     wifiManagerSetup();
+    mqtt.setCallback(handleMqttMessage);
 
     if (storedValues) {
         mqtt.setServer(mqttBroker, atoi(mqttPort));
