@@ -1,25 +1,23 @@
 /*
-0.0 - Base on ESP32_WiFiManager_MQTT_SPIFFS
-    - Chage Serial.print to DebugMode
-    - You can use wifi without MQTT Breker by removing the MQTT Broker field on web UI.
+
 */
 #include <Arduino.h>
 #include <FS.h>  //this needs to be first, or it all crashes and burns...
-#include <SPIFFS.h>
-#include <ArduinoJson.h>  //https://github.com/bblanchon/ArduinoJson
 #include <WiFiManager.h>  //https://github.com/tzapu/WiFiManager
+#include <SPIFFS.h>
+#include <ArduinoJson.h>
 #include <PubSubClient.h>
-#include <TickTwo.h>
-#include <ezLED.h>
 #include <Button2.h>
+#include <ezLED.h>
+#include <TickTwo.h>
 
 //******************************** Configulation ****************************//
-// #define _DEBUG_ // Uncomment this line if you want to debug
+#define _DEBUG_  // Comment this line if you don't want to debug
 
 //******************************** Variables & Objects **********************//
 #define deviceName "MyESP32"
 
-bool storedValues;
+bool mqttParameter;
 //----------------- esLED ---------------------//
 #define ledPin LED_BUILTIN
 ezLED statusLed(ledPin);
@@ -46,6 +44,9 @@ WiFiClient   espClient;
 PubSubClient mqtt(espClient);
 
 //******************************** Tasks ************************************//
+// void    mqttStateDetector();
+// TickTwo tMqttStateDetector(mqttStateDetector, 3000, 0, MILLIS);
+
 void    connectMqtt();
 void    reconnectMqtt();
 TickTwo tConnectMqtt(connectMqtt, 0, 0, MILLIS);  // (function, interval, iteration, interval unit)
@@ -92,7 +93,7 @@ void loadConfigration() {
                     strcpy(mqttPort, json["mqttPort"]);
                     strcpy(mqttUser, json["mqttUser"]);
                     strcpy(mqttPass, json["mqttPass"]);
-                    storedValues = json["storedValues"];
+                    mqttParameter = json["mqttParameter"];
                 } else {
 #ifdef _DEBUG_
                     Serial.println(F("failed to load json config"));
@@ -103,6 +104,39 @@ void loadConfigration() {
     } else {
 #ifdef _DEBUG_
         Serial.println(F("failed to mount FS"));
+#endif
+    }
+}
+
+void handleMqttMessage(char* topic, byte* payload, unsigned int length) {
+    String message;
+    for (int i = 0; i < length; i++) {
+        message += (char)payload[i];
+    }
+
+    if (String(topic) == "test/subscribe/topic") {
+        if (message == "aValue") {
+            // Do something
+        } else if (message == "otherValue") {
+            // Do something
+        }
+    }
+}
+
+void mqttInit() {
+#ifdef _DEBUG_
+    Serial.print(F("MQTT parameters are "));
+#endif
+    if (mqttParameter) {
+#ifdef _DEBUG_
+        Serial.println(F(" available"));
+#endif
+        mqtt.setServer(mqttBroker, atoi(mqttPort));
+        mqtt.setCallback(handleMqttMessage);
+        tConnectMqtt.start();
+    } else {
+#ifdef _DEBUG_
+        Serial.println(F(" not available."));
 #endif
     }
 }
@@ -136,8 +170,8 @@ void saveConfigCallback() {
     json["mqttPass"]   = mqttPass;
 
     if (json["mqttBroker"] != "") {
-        json["storedValues"] = true;
-        storedValues         = json["storedValues"];
+        json["mqttParameter"] = true;
+        mqttParameter         = json["mqttParameter"];
     }
 
     File configFile = SPIFFS.open("/config.json", "w");
@@ -160,14 +194,7 @@ void saveConfigCallback() {
     Serial.println(WiFi.dnsIP());
 #endif
 
-    if (storedValues) {
-#ifdef _DEBUG_
-        Serial.print(F("Setting MQTT Broker: "));
-        Serial.println(mqttBroker);
-#endif
-        mqtt.setServer(mqttBroker, atoi(mqttPort));
-        tConnectMqtt.start();
-    }
+    mqttInit();
 }
 
 //----------------- Wifi Manager --------------//
@@ -193,27 +220,12 @@ void wifiManagerSetup() {
 
     if (wifiManager.autoConnect(deviceName, "password")) {
 #ifdef _DEBUG_
-        Serial.println(F("connected...yeey :D"));
+        Serial.println(F("WiFi is connected :D"));
 #endif
     } else {
 #ifdef _DEBUG_
         Serial.println(F("Configportal running"));
 #endif
-    }
-}
-
-void handleMqttMessage(char* topic, byte* payload, unsigned int length) {
-    String message;
-    for (int i = 0; i < length; i++) {
-        message += (char)payload[i];
-    }
-
-    if (String(topic) == "test/subscribe/topic") {
-        if (message == "aValue") {
-            // Do something
-        } else if (message == "otherValue") {
-            // Do something
-        }
     }
 }
 
@@ -239,8 +251,9 @@ void reconnectMqtt() {
 #endif
         if (mqtt.connect(deviceName, mqttUser, mqttPass)) {
             tReconnectMqtt.stop();
+            Serial.printf("tReconnectMqtt, counter: %d\n", tReconnectMqtt.counter());
 #ifdef _DEBUG_
-            Serial.println(F("connected"));
+            Serial.println(F("Connected"));
 #endif
             tConnectMqtt.interval(0);
             tConnectMqtt.start();
@@ -255,11 +268,9 @@ void reconnectMqtt() {
             Serial.println(tReconnectMqtt.counter());
 #endif
             if (tReconnectMqtt.counter() >= 3) {
-                // ESP.restart();
                 tReconnectMqtt.stop();
-                // tConnectMqtt.interval(3600 * 1000);
                 tConnectMqtt.interval(60 * 1000);  // Wait 1 minute before reconnecting.
-                tConnectMqtt.resume();
+                tConnectMqtt.start();
             }
         }
     } else {
@@ -273,7 +284,8 @@ void reconnectMqtt() {
 
 void connectMqtt() {
     if (!mqtt.connected()) {
-        tConnectMqtt.pause();
+        Serial.printf("tConnectMqtt, counter: %d\n", tConnectMqtt.counter());
+        tConnectMqtt.stop();
         tReconnectMqtt.start();
     } else {
         mqtt.loop();
@@ -293,23 +305,19 @@ void resetWifiBtPressed(Button2& btn) {
     Serial.println(F(" is restarting."));
 #endif
     ESP.restart();
+    delay(3000);
 }
 
 //********************************  Setup ***********************************//
 void setup() {
+    Serial.begin(115200);
     statusLed.turnOFF();
     resetWifiBt.begin(resetWifiBtPin);
     resetWifiBt.setLongClickTime(5000);
     resetWifiBt.setLongClickDetectedHandler(resetWifiBtPressed);
-    Serial.begin(115200);
 
     wifiManagerSetup();
-    mqtt.setCallback(handleMqttMessage);
-
-    if (storedValues) {
-        mqtt.setServer(mqttBroker, atoi(mqttPort));
-        tConnectMqtt.start();
-    }
+    mqttInit();
 }
 
 //********************************  Loop ************************************//
